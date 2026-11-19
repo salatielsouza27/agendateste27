@@ -1,78 +1,43 @@
 import streamlit as st
 import pandas as pd
-
-from datetime import datetime
-
-from database.connection import SessionLocal
-from database.models import (
-    Cliente,
-    Profissional,
-    Servico,
-    Agendamento
-)
+import sqlite3
 
 st.set_page_config(
     page_title="Agenda",
     layout="wide"
 )
 
-db = SessionLocal()
-
 st.title("Agenda Inteligente")
 
-clientes = db.query(
-    Cliente
-).order_by(
-    Cliente.nome
-).all()
+conn = sqlite3.connect(
+    "beautyschedule.db",
+    check_same_thread=False
+)
 
-profissionais = db.query(
-    Profissional
-).filter(
-    Profissional.ativo == True
-).all()
+# Cria tabela se não existir
+conn.execute("""
+CREATE TABLE IF NOT EXISTS agendamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente TEXT,
+    profissional TEXT,
+    servico TEXT,
+    data TEXT,
+    hora TEXT,
+    status TEXT
+)
+""")
 
-servicos = db.query(
-    Servico
-).filter(
-    Servico.ativo == True
-).all()
+st.subheader("Novo Agendamento")
 
-if not clientes:
-    st.warning("Cadastre clientes primeiro")
-    st.stop()
+with st.form("agenda"):
 
-if not profissionais:
-    st.warning("Cadastre profissionais primeiro")
-    st.stop()
+    cliente = st.text_input("Cliente")
 
-if not servicos:
-    st.warning("Cadastre serviços primeiro")
-    st.stop()
+    profissional = st.text_input("Profissional")
 
-with st.form("novo_agendamento"):
+    servico = st.text_input("Serviço")
 
-    cliente = st.selectbox(
-        "Cliente",
-        clientes,
-        format_func=lambda x: x.nome
-    )
-
-    profissional = st.selectbox(
-        "Profissional",
-        profissionais,
-        format_func=lambda x: x.nome
-    )
-
-    servico = st.selectbox(
-        "Serviço",
-        servicos,
-        format_func=lambda x: x.nome
-    )
-
-    data = st.date_input(
-        "Data"
-    )
+    data = st.date_input("Data")
 
     hora = st.selectbox(
         "Hora",
@@ -97,121 +62,83 @@ with st.form("novo_agendamento"):
 
     if salvar:
 
-        conflito = db.query(
-            Agendamento
-        ).filter(
-            Agendamento.profissional_id
-            == profissional.id,
-            Agendamento.data == data,
-            Agendamento.hora
-            == datetime.strptime(
-                hora,
-                "%H:%M"
-            ).time()
-        ).first()
+        conflito = conn.execute(
+            """
+            SELECT *
+            FROM agendamentos
+            WHERE profissional=?
+            AND data=?
+            AND hora=?
+            """,
+            (
+                profissional,
+                str(data),
+                hora
+            )
+        ).fetchone()
 
         if conflito:
 
             st.error(
-                "Horário já ocupado"
+                "Horário já ocupado para este profissional."
             )
 
         else:
 
-            novo_agendamento = Agendamento(
-                cliente_id=cliente.id,
-                profissional_id=profissional.id,
-                servico_id=servico.id,
-                data=data,
-                hora=datetime.strptime(
+            conn.execute(
+                """
+                INSERT INTO agendamentos
+                (
+                    cliente,
+                    profissional,
+                    servico,
+                    data,
                     hora,
-                    "%H:%M"
-                ).time(),
-                status="Agendado"
+                    status
+                )
+                VALUES
+                (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cliente,
+                    profissional,
+                    servico,
+                    str(data),
+                    hora,
+                    "Agendado"
+                )
             )
 
-            db.add(
-                novo_agendamento
-            )
-
-            db.commit()
+            conn.commit()
 
             st.success(
-                "Agendamento realizado"
+                "Agendamento realizado com sucesso"
             )
-
-            st.rerun()
 
 st.divider()
 
-st.subheader(
-    "Agendamentos do Dia"
+st.subheader("Agenda")
+
+df = pd.read_sql_query(
+    """
+    SELECT *
+    FROM agendamentos
+    ORDER BY data,hora
+    """,
+    conn
 )
 
-agendamentos = db.query(
-    Agendamento
-).order_by(
-    Agendamento.data,
-    Agendamento.hora
-).all()
-
-dados = []
-
-for a in agendamentos:
-
-    cliente = db.query(
-        Cliente
-    ).get(
-        a.cliente_id
-    )
-
-    profissional = db.query(
-        Profissional
-    ).get(
-        a.profissional_id
-    )
-
-    servico = db.query(
-        Servico
-    ).get(
-        a.servico_id
-    )
-
-    dados.append({
-
-        "Cliente":
-        cliente.nome,
-
-        "Profissional":
-        profissional.nome,
-
-        "Serviço":
-        servico.nome,
-
-        "Data":
-        a.data,
-
-        "Hora":
-        a.hora,
-
-        "Status":
-        a.status
-
-    })
-
-if dados:
+if len(df) > 0:
 
     st.dataframe(
-        pd.DataFrame(
-            dados
-        ),
+        df,
         use_container_width=True
     )
 
 else:
 
     st.info(
-        "Nenhum agendamento"
+        "Nenhum agendamento cadastrado."
     )
 
-db.close()
+conn.close()
