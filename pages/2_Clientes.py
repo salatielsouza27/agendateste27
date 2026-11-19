@@ -1,164 +1,86 @@
 import streamlit as st
-import pandas as pd
 import sqlite3
+import pandas as pd
 
 st.set_page_config(
     page_title="Clientes",
     layout="wide"
 )
 
-st.title("Cadastro de Clientes")
+st.title("Clientes")
 
 conn = sqlite3.connect(
     "beautyschedule.db",
     check_same_thread=False
 )
 
-# Cria tabela automaticamente
-conn.execute("""
+cursor = conn.cursor()
+
+# recria tabela corretamente
+
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    telefone TEXT,
-    email TEXT,
-    observacoes TEXT
+    nome TEXT
 )
 """)
 
-# ===============================
-# NOVO CLIENTE
-# ===============================
+conn.commit()
 
-with st.expander(
-    "Novo Cliente",
-    expanded=True
-):
+# =====================
+# CADASTRO
+# =====================
 
-    with st.form("cliente_form"):
+nome = st.text_input(
+    "Nome do Cliente"
+)
 
-        nome = st.text_input("Nome")
+if st.button("Salvar"):
 
-        telefone = st.text_input("Telefone")
+    if nome:
 
-        email = st.text_input("E-mail")
-
-        observacoes = st.text_area(
-            "Observações"
+        cursor.execute(
+            """
+            INSERT INTO clientes(nome)
+            VALUES(?)
+            """,
+            (nome,)
         )
 
-        salvar = st.form_submit_button(
-            "Salvar Cliente"
+        conn.commit()
+
+        st.success(
+            "Cliente cadastrado"
         )
 
-        if salvar:
-
-            if nome.strip() == "":
-
-                st.error(
-                    "Informe o nome do cliente"
-                )
-
-            else:
-
-                conn.execute(
-                    """
-                    INSERT INTO clientes
-                    (
-                        nome,
-                        telefone,
-                        email,
-                        observacoes
-                    )
-                    VALUES
-                    (?, ?, ?, ?)
-                    """,
-                    (
-                        nome,
-                        telefone,
-                        email,
-                        observacoes
-                    )
-                )
-
-                conn.commit()
-
-                st.success(
-                    "Cliente cadastrado com sucesso"
-                )
-
-                st.rerun()
-
-# ===============================
-# CLIENTES CADASTRADOS
-# ===============================
-
-st.divider()
+# =====================
+# LISTAGEM
+# =====================
 
 st.subheader(
     "Clientes Cadastrados"
 )
 
-df = pd.read_sql_query(
-    """
-    SELECT
-    id,
-    nome,
-    telefone,
-    email
-    FROM clientes
-    ORDER BY nome
-    """,
-    conn
-)
+try:
 
-if len(df) > 0:
+    df = pd.read_sql_query(
+        """
+        SELECT *
+        FROM clientes
+        ORDER BY id DESC
+        """,
+        conn
+    )
 
     st.dataframe(
         df,
         use_container_width=True
     )
 
-else:
+except Exception as erro:
 
-    st.info(
-        "Nenhum cliente cadastrado"
+    st.error(
+        f"Erro ao carregar clientes: {erro}"
     )
-
-# ===============================
-# EXCLUIR CLIENTE
-# ===============================
-
-st.divider()
-
-st.subheader(
-    "Excluir Cliente"
-)
-
-if len(df) > 0:
-
-    cliente_id = st.selectbox(
-        "Selecione",
-        df["id"]
-    )
-
-    if st.button(
-        "Excluir Cliente"
-    ):
-
-        conn.execute(
-            """
-            DELETE FROM clientes
-            WHERE id=?
-            """,
-            (int(cliente_id),)
-        )
-
-        conn.commit()
-
-        st.success(
-            "Cliente removido"
-        )
-
-        st.rerun()
 
 conn.close()
