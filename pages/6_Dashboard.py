@@ -1,265 +1,244 @@
 import streamlit as st
+import sqlite3
 import pandas as pd
 
-from sqlalchemy import func
-
-from database.connection import SessionLocal
-from database.models import (
-    Cliente,
-    Profissional,
-    Servico,
-    Agendamento
-)
-
 st.set_page_config(
-    page_title="Dashboard",
+    page_title="Dashboard Executivo",
     layout="wide"
 )
 
-db = SessionLocal()
+st.title("📊 Dashboard Executivo")
 
-st.title("Dashboard Executivo")
-
-# =====================================
-# MÉTRICAS PRINCIPAIS
-# =====================================
-
-total_clientes = db.query(
-    Cliente
-).count()
-
-total_profissionais = db.query(
-    Profissional
-).count()
-
-total_servicos = db.query(
-    Servico
-).count()
-
-total_agendamentos = db.query(
-    Agendamento
-).count()
-
-# =====================================
-# FATURAMENTO
-# =====================================
-
-resultado = (
-    db.query(
-        func.sum(Servico.valor)
-    )
-    .join(
-        Agendamento,
-        Agendamento.servico_id == Servico.id
-    )
-    .scalar()
+conn = sqlite3.connect(
+    "beautyschedule.db",
+    check_same_thread=False
 )
 
-faturamento = resultado or 0
+# ==========================
+# GARANTIR TABELAS
+# ==========================
 
-# =====================================
-# CARDS
-# =====================================
+conn.execute("""
+CREATE TABLE IF NOT EXISTS clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT
+)
+""")
 
-c1, c2, c3, c4, c5 = st.columns(5)
+conn.execute("""
+CREATE TABLE IF NOT EXISTS profissionais (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT
+)
+""")
 
-with c1:
+conn.execute("""
+CREATE TABLE IF NOT EXISTS servicos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT,
+    valor REAL
+)
+""")
+
+conn.execute("""
+CREATE TABLE IF NOT EXISTS agendamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente TEXT,
+    profissional TEXT,
+    servico TEXT,
+    data TEXT,
+    hora TEXT,
+    status TEXT
+)
+""")
+
+# ==========================
+# INDICADORES
+# ==========================
+
+clientes = conn.execute(
+    "SELECT COUNT(*) FROM clientes"
+).fetchone()[0]
+
+profissionais = conn.execute(
+    "SELECT COUNT(*) FROM profissionais"
+).fetchone()[0]
+
+servicos = conn.execute(
+    "SELECT COUNT(*) FROM servicos"
+).fetchone()[0]
+
+agendamentos = conn.execute(
+    "SELECT COUNT(*) FROM agendamentos"
+).fetchone()[0]
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
     st.metric(
         "Clientes",
-        total_clientes
+        clientes
     )
 
-with c2:
+with col2:
     st.metric(
         "Profissionais",
-        total_profissionais
+        profissionais
     )
 
-with c3:
+with col3:
     st.metric(
         "Serviços",
-        total_servicos
+        servicos
     )
 
-with c4:
+with col4:
     st.metric(
         "Agendamentos",
-        total_agendamentos
-    )
-
-with c5:
-    st.metric(
-        "Faturamento",
-        f"R$ {faturamento:.2f}"
+        agendamentos
     )
 
 st.divider()
 
-# =====================================
+# ==========================
 # PRÓXIMOS AGENDAMENTOS
-# =====================================
+# ==========================
 
 st.subheader(
-    "Próximos Agendamentos"
+    "📅 Próximos Agendamentos"
 )
 
-agendamentos = db.query(
-    Agendamento
-).all()
+df_agenda = pd.read_sql_query(
+    """
+    SELECT
+    cliente,
+    profissional,
+    servico,
+    data,
+    hora,
+    status
+    FROM agendamentos
+    ORDER BY data,hora
+    """,
+    conn
+)
 
-dados = []
-
-for ag in agendamentos:
-
-    cliente = db.query(
-        Cliente
-    ).get(
-        ag.cliente_id
-    )
-
-    profissional = db.query(
-        Profissional
-    ).get(
-        ag.profissional_id
-    )
-
-    servico = db.query(
-        Servico
-    ).get(
-        ag.servico_id
-    )
-
-    dados.append({
-
-        "Cliente":
-        cliente.nome,
-
-        "Profissional":
-        profissional.nome,
-
-        "Serviço":
-        servico.nome,
-
-        "Data":
-        ag.data,
-
-        "Hora":
-        ag.hora,
-
-        "Status":
-        ag.status
-
-    })
-
-if dados:
-
-    df = pd.DataFrame(
-        dados
-    )
+if len(df_agenda) > 0:
 
     st.dataframe(
-        df,
+        df_agenda,
         use_container_width=True
     )
 
 else:
 
     st.info(
-        "Nenhum agendamento encontrado"
+        "Nenhum agendamento encontrado."
     )
 
 st.divider()
 
-# =====================================
-# SERVIÇOS MAIS VENDIDOS
-# =====================================
+# ==========================
+# SERVIÇOS MAIS AGENDADOS
+# ==========================
 
 st.subheader(
-    "Serviços Mais Agendados"
+    "🏆 Serviços Mais Agendados"
 )
 
-servicos_populares = []
+df_servicos = pd.read_sql_query(
+    """
+    SELECT
+        servico,
+        COUNT(*) quantidade
+    FROM agendamentos
+    GROUP BY servico
+    ORDER BY quantidade DESC
+    """,
+    conn
+)
 
-servicos = db.query(
-    Servico
-).all()
-
-for servico in servicos:
-
-    quantidade = db.query(
-        Agendamento
-    ).filter(
-        Agendamento.servico_id
-        == servico.id
-    ).count()
-
-    servicos_populares.append({
-
-        "Serviço":
-        servico.nome,
-
-        "Quantidade":
-        quantidade
-
-    })
-
-if servicos_populares:
-
-    grafico = pd.DataFrame(
-        servicos_populares
-    )
+if len(df_servicos) > 0:
 
     st.bar_chart(
-        grafico.set_index(
-            "Serviço"
+        df_servicos.set_index(
+            "servico"
         )
     )
 
+else:
+
+    st.info(
+        "Sem dados suficientes."
+    )
+
 st.divider()
 
-# =====================================
+# ==========================
 # PROFISSIONAIS MAIS OCUPADOS
-# =====================================
+# ==========================
 
 st.subheader(
-    "Profissionais Mais Agendados"
+    "👨‍💼 Profissionais Mais Agendados"
 )
 
-profissionais_dashboard = []
+df_profissionais = pd.read_sql_query(
+    """
+    SELECT
+        profissional,
+        COUNT(*) quantidade
+    FROM agendamentos
+    GROUP BY profissional
+    ORDER BY quantidade DESC
+    """,
+    conn
+)
 
-profissionais = db.query(
-    Profissional
-).all()
-
-for profissional in profissionais:
-
-    quantidade = db.query(
-        Agendamento
-    ).filter(
-        Agendamento.profissional_id
-        == profissional.id
-    ).count()
-
-    profissionais_dashboard.append({
-
-        "Profissional":
-        profissional.nome,
-
-        "Agendamentos":
-        quantidade
-
-    })
-
-if profissionais_dashboard:
-
-    grafico_profissionais = pd.DataFrame(
-        profissionais_dashboard
-    )
+if len(df_profissionais) > 0:
 
     st.bar_chart(
-        grafico_profissionais.set_index(
-            "Profissional"
+        df_profissionais.set_index(
+            "profissional"
         )
     )
 
-db.close()
+else:
+
+    st.info(
+        "Sem dados suficientes."
+    )
+
+st.divider()
+
+# ==========================
+# RESUMO FINANCEIRO
+# ==========================
+
+st.subheader(
+    "💰 Resumo Financeiro"
+)
+
+try:
+
+    valor_total = conn.execute(
+        """
+        SELECT SUM(valor)
+        FROM servicos
+        """
+    ).fetchone()[0]
+
+    valor_total = valor_total or 0
+
+    st.metric(
+        "Faturamento Potencial",
+        f"R$ {valor_total:,.2f}"
+    )
+
+except:
+
+    st.metric(
+        "Faturamento Potencial",
+        "R$ 0,00"
+    )
+
+conn.close()
