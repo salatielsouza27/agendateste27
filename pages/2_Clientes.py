@@ -1,25 +1,40 @@
 import streamlit as st
 import pandas as pd
-
-from database.connection import SessionLocal
-from database.models import Cliente
+import sqlite3
 
 st.set_page_config(
     page_title="Clientes",
     layout="wide"
 )
 
-db = SessionLocal()
-
 st.title("Cadastro de Clientes")
 
-# =====================
+conn = sqlite3.connect(
+    "beautyschedule.db",
+    check_same_thread=False
+)
+
+# Cria tabela automaticamente
+conn.execute("""
+CREATE TABLE IF NOT EXISTS clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    telefone TEXT,
+    email TEXT,
+    observacoes TEXT
+)
+""")
+
+# ===============================
 # NOVO CLIENTE
-# =====================
+# ===============================
 
-with st.expander("Novo Cliente", expanded=True):
+with st.expander(
+    "Novo Cliente",
+    expanded=True
+):
 
-    with st.form("novo_cliente"):
+    with st.form("cliente_form"):
 
         nome = st.text_input("Nome")
 
@@ -27,7 +42,9 @@ with st.expander("Novo Cliente", expanded=True):
 
         email = st.text_input("E-mail")
 
-        observacoes = st.text_area("Observações")
+        observacoes = st.text_area(
+            "Observações"
+        )
 
         salvar = st.form_submit_button(
             "Salvar Cliente"
@@ -36,18 +53,34 @@ with st.expander("Novo Cliente", expanded=True):
         if salvar:
 
             if nome.strip() == "":
-                st.error("Informe o nome")
-            else:
 
-                cliente = Cliente(
-                    nome=nome,
-                    telefone=telefone,
-                    email=email,
-                    observacoes=observacoes
+                st.error(
+                    "Informe o nome do cliente"
                 )
 
-                db.add(cliente)
-                db.commit()
+            else:
+
+                conn.execute(
+                    """
+                    INSERT INTO clientes
+                    (
+                        nome,
+                        telefone,
+                        email,
+                        observacoes
+                    )
+                    VALUES
+                    (?, ?, ?, ?)
+                    """,
+                    (
+                        nome,
+                        telefone,
+                        email,
+                        observacoes
+                    )
+                )
+
+                conn.commit()
 
                 st.success(
                     "Cliente cadastrado com sucesso"
@@ -55,139 +88,72 @@ with st.expander("Novo Cliente", expanded=True):
 
                 st.rerun()
 
-# =====================
-# LISTAGEM
-# =====================
+# ===============================
+# CLIENTES CADASTRADOS
+# ===============================
 
-st.subheader("Clientes Cadastrados")
+st.divider()
 
-clientes = db.query(
-    Cliente
-).order_by(
-    Cliente.nome
-).all()
+st.subheader(
+    "Clientes Cadastrados"
+)
 
-dados = []
+df = pd.read_sql_query(
+    """
+    SELECT
+    id,
+    nome,
+    telefone,
+    email
+    FROM clientes
+    ORDER BY nome
+    """,
+    conn
+)
 
-for c in clientes:
+if len(df) > 0:
 
-    dados.append({
-        "ID": c.id,
-        "Nome": c.nome,
-        "Telefone": c.telefone,
-        "Email": c.email
-    })
-
-df = pd.DataFrame(dados)
-
-if not df.empty:
     st.dataframe(
         df,
         use_container_width=True
     )
+
 else:
+
     st.info(
-        "Nenhum cliente encontrado"
+        "Nenhum cliente cadastrado"
     )
 
-# =====================
-# EDITAR
-# =====================
+# ===============================
+# EXCLUIR CLIENTE
+# ===============================
 
 st.divider()
 
-st.subheader("Editar Cliente")
+st.subheader(
+    "Excluir Cliente"
+)
 
-if clientes:
+if len(df) > 0:
 
     cliente_id = st.selectbox(
         "Selecione",
-        options=[
-            c.id
-            for c in clientes
-        ]
-    )
-
-    cliente = db.query(
-        Cliente
-    ).filter(
-        Cliente.id == cliente_id
-    ).first()
-
-    with st.form("editar_cliente"):
-
-        novo_nome = st.text_input(
-            "Nome",
-            value=cliente.nome
-        )
-
-        novo_telefone = st.text_input(
-            "Telefone",
-            value=cliente.telefone or ""
-        )
-
-        novo_email = st.text_input(
-            "Email",
-            value=cliente.email or ""
-        )
-
-        nova_obs = st.text_area(
-            "Observações",
-            value=cliente.observacoes or ""
-        )
-
-        atualizar = st.form_submit_button(
-            "Atualizar"
-        )
-
-        if atualizar:
-
-            cliente.nome = novo_nome
-            cliente.telefone = novo_telefone
-            cliente.email = novo_email
-            cliente.observacoes = nova_obs
-
-            db.commit()
-
-            st.success(
-                "Cliente atualizado"
-            )
-
-            st.rerun()
-
-# =====================
-# EXCLUIR
-# =====================
-
-st.divider()
-
-st.subheader("Excluir Cliente")
-
-if clientes:
-
-    excluir_id = st.selectbox(
-        "Cliente para excluir",
-        options=[
-            c.id
-            for c in clientes
-        ],
-        key="delete"
+        df["id"]
     )
 
     if st.button(
-        "Excluir Cliente",
-        type="primary"
+        "Excluir Cliente"
     ):
 
-        cliente = db.query(
-            Cliente
-        ).filter(
-            Cliente.id == excluir_id
-        ).first()
+        conn.execute(
+            """
+            DELETE FROM clientes
+            WHERE id=?
+            """,
+            (int(cliente_id),)
+        )
 
-        db.delete(cliente)
-
-        db.commit()
+        conn.commit()
 
         st.success(
             "Cliente removido"
@@ -195,4 +161,4 @@ if clientes:
 
         st.rerun()
 
-db.close()
+conn.close()
