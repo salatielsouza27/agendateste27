@@ -1,13 +1,13 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
+import sqlite3
 
 st.set_page_config(
     page_title="Clientes",
     layout="wide"
 )
 
-st.title("Clientes")
+st.title("👥 Cadastro de Clientes")
 
 conn = sqlite3.connect(
     "beautyschedule.db",
@@ -16,71 +16,130 @@ conn = sqlite3.connect(
 
 cursor = conn.cursor()
 
-# recria tabela corretamente
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT
+    nome TEXT,
+    telefone TEXT,
+    email TEXT,
+    observacoes TEXT
 )
 """)
 
 conn.commit()
 
-# =====================
-# CADASTRO
-# =====================
+# FORMULÁRIO
 
-nome = st.text_input(
-    "Nome do Cliente"
-)
+with st.container():
 
-if st.button("Salvar"):
+    st.subheader("Novo Cliente")
 
-    if nome:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        nome = st.text_input("Nome")
+
+        telefone = st.text_input(
+            "Telefone"
+        )
+
+    with col2:
+
+        email = st.text_input(
+            "E-mail"
+        )
+
+    observacoes = st.text_area(
+        "Observações"
+    )
+
+    if st.button(
+        "Salvar Cliente"
+    ):
 
         cursor.execute(
             """
-            INSERT INTO clientes(nome)
-            VALUES(?)
+            INSERT INTO clientes
+            (
+                nome,
+                telefone,
+                email,
+                observacoes
+            )
+            VALUES (?, ?, ?, ?)
             """,
-            (nome,)
+            (
+                nome,
+                telefone,
+                email,
+                observacoes
+            )
         )
 
         conn.commit()
 
         st.success(
-            "Cliente cadastrado"
+            "Cliente salvo com sucesso"
         )
 
-# =====================
-# LISTAGEM
-# =====================
+        st.rerun()
+
+st.divider()
+
+# TABELA
 
 st.subheader(
     "Clientes Cadastrados"
 )
 
-try:
+df = pd.read_sql_query(
+    """
+    SELECT
+    id,
+    nome,
+    telefone,
+    email,
+    observacoes
+    FROM clientes
+    ORDER BY id DESC
+    """,
+    conn
+)
 
-    df = pd.read_sql_query(
-        """
-        SELECT *
-        FROM clientes
-        ORDER BY id DESC
-        """,
-        conn
+st.dataframe(
+    df,
+    use_container_width=True
+)
+
+# EXCLUSÃO
+
+if len(df) > 0:
+
+    st.divider()
+
+    cliente_id = st.selectbox(
+        "Excluir Cliente",
+        df["id"]
     )
 
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
+    if st.button(
+        "Excluir"
+    ):
 
-except Exception as erro:
+        cursor.execute(
+            """
+            DELETE FROM clientes
+            WHERE id = ?
+            """,
+            (int(cliente_id),)
+        )
 
-    st.error(
-        f"Erro ao carregar clientes: {erro}"
-    )
+        conn.commit()
+
+        st.success(
+            "Cliente excluído"
+        )
+
+        st.rerun()
 
 conn.close()
